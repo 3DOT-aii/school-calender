@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>School Calendar — Asian Hope International School</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#0F4C2E;color:#111}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+header{background:#fff;border-radius:12px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font:700 18px Montserrat,sans-serif;margin:0}h1 small{display:block;font:500 12px Inter;color:#666;margin-top:2px}
+button{font:600 13px Inter;cursor:pointer;border:0;border-radius:999px;padding:8px 14px;background:#F4F4F2;color:#333}
+button.pri{background:#16A34A;color:#fff}button.on{background:#0F4C2E;color:#fff}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
+.chip{background:#fff;border:2px solid var(--c);color:#333;padding:5px 12px;font-size:12.5px}
+.chip.off{opacity:.45;border-color:transparent}
+.card{background:#fff;border-radius:12px;padding:14px}
+.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.nav b{font:700 16px Montserrat}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.dow{font-size:11px;font-weight:600;color:#888;text-align:center;padding:4px 0}
+.day{min-height:78px;border-radius:8px;background:#F8F8F6;padding:4px;cursor:pointer;overflow:hidden;border:2px solid transparent}
+.day.o{opacity:.4}.day.t{background:#EAF7EF}.day.s{border-color:#16A34A}
+.day span{font-size:12px;font-weight:600}
+.pill{display:block;font-size:10.5px;color:#fff;border-radius:4px;padding:1px 4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--c)}
+.more{font-size:10.5px;color:#666;margin-top:2px}
+.ev{border-left:4px solid var(--c);background:#F8F8F6;border-radius:8px;padding:10px 12px;margin-top:8px}
+.ev b{font-size:14.5px}.tag{font-size:11px;font-weight:600;color:var(--c);margin-left:6px}
+.meta{font-size:12.5px;color:#555;margin-top:2px}.note{font-size:13px;margin-top:4px}
+.dh{font:700 13px Montserrat;margin:14px 0 0;color:#0F4C2E}
+.acts{margin-top:6px;display:flex;gap:6px}.acts button{padding:4px 10px;font-size:12px}
+dialog{border:0;border-radius:14px;padding:20px;width:min(420px,92vw)}dialog::backdrop{background:#0008}
+label{display:block;font-size:12px;font-weight:600;margin:10px 0 4px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid #ccc;border-radius:8px;font:14px Inter}
+.row{display:flex;gap:8px}.row>div{flex:1}
+#msg{color:#fff;text-align:center;padding:30px 0;font-size:14px}
+@media(max-width:600px){.day{min-height:52px}.pill{font-size:0;height:6px;padding:0}}
+</style></head><body><div class="wrap">
+<header><h1>School Calendar<small>Asian Hope International School</small></h1>
+<div><button id="vm" class="on">Month</button> <button id="vl">List</button> <button id="adm">Admin</button></div></header>
+<div class="bar" id="chips"></div>
+<div id="msg" hidden></div>
+<div class="card" id="main"></div>
+<div class="bar"><button class="pri" id="add" hidden>+ Add event</button></div>
+</div>
+<dialog id="dlg"><form id="f"><b id="dt" style="font:700 16px Montserrat"></b>
+<label>Title</label><input name="title" required maxlength="120">
+<label>Category</label><select name="category"></select>
+<div class="row"><div><label>Start date</label><input type="date" name="date" required></div><div><label>End date (optional)</label><input type="date" name="endDate"></div></div>
+<div class="row"><div><label>Start time</label><input type="time" name="time"></div><div><label>End time</label><input type="time" name="endTime"></div></div>
+<label>Note</label><textarea name="note" rows="3" maxlength="1000"></textarea>
+<div class="row" style="margin-top:14px"><button type="button" id="cx">Cancel</button><button class="pri" type="submit">Save</button></div></form></dialog>
+<script>
+const API="/api/calendar"; // served by the same server, so no address needed
+const CATS={"Exams":"#DC2626","Holidays":"#16A34A","Events":"#7C3AED","Sports":"#EA580C","Parent meetings":"#2563EB","Deadlines":"#CA8A04"};
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+let events=[],view="month",cur=new Date(),sel=iso(new Date()),off=new Set(),token=localStorage.getItem("cal-token")||"",admin=false,editId=null;
+cur.setDate(1);
+async function api(method,path="",body){
+  const r=await fetch(API+path,{method,headers:{"Content-Type":"application/json","x-admin-token":token},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"Request failed");return j}
+async function load(){try{events=await api("GET");$("#msg").hidden=true}catch{$("#msg").hidden=false;$("#msg").textContent="Calendar is unavailable right now. Please try again later.";events=[]}render()}
+const on=ds=>events.filter(e=>e.date<=ds&&(e.endDate||e.date)>=ds&&!off.has(e.category));
+const tm=e=>e.time?e.time+(e.endTime?"–"+e.endTime:""):"All day";
+function evHtml(e){return `<div class="ev" style="--c:${CATS[e.category]}"><b>${esc(e.title)}</b><span class="tag">${esc(e.category)}</span>
+<div class="meta">${tm(e)}${e.endDate?" · until "+e.endDate:""}</div>${e.note?`<div class="note">${esc(e.note)}</div>`:""}
+${admin?`<div class="acts"><button data-e="${e.id}">Edit</button><button data-d="${e.id}">Delete</button></div>`:""}</div>`}
+function render(){
+  $("#chips").innerHTML=Object.keys(CATS).map(c=>`<button class="chip ${off.has(c)?"off":""}" style="--c:${CATS[c]}" data-c="${c}">${c}</button>`).join("");
+  $("#vm").className=view=="month"?"on":"";$("#vl").className=view=="list"?"on":"";
+  $("#adm").textContent=admin?"Log out":"Admin";$("#add").hidden=!admin;
+  $("#main").innerHTML=view=="month"?month():list()}
+function month(){
+  const y=cur.getFullYear(),m=cur.getMonth(),start=new Date(y,m,1-new Date(y,m,1).getDay()),today=iso(new Date());
+  let h=`<div class="nav"><button data-n="-1">‹</button><b>${cur.toLocaleString("en",{month:"long",year:"numeric"})}</b><button data-n="1">›</button></div><div class="grid">`+
+    ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>`<div class="dow">${d}</div>`).join("");
+  for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds=iso(d),ev=on(ds);
+    h+=`<div class="day ${d.getMonth()!=m?"o":""} ${ds==today?"t":""} ${ds==sel?"s":""}" data-day="${ds}"><span>${d.getDate()}</span>`+
+      ev.slice(0,3).map(e=>`<i class="pill" style="--c:${CATS[e.category]}">${esc(e.title)}</i>`).join("")+(ev.length>3?`<div class="more">+${ev.length-3} more</div>`:"")+`</div>`}
+  const s=on(sel);
+  return h+`</div><div class="dh">${new Date(sel+"T00:00").toLocaleDateString("en",{weekday:"long",month:"long",day:"numeric"})}</div>`+(s.length?s.map(evHtml).join(""):`<div class="meta" style="margin-top:8px">No events this day.</div>`)}
+function list(){
+  const t=iso(new Date()),up=events.filter(e=>(e.endDate||e.date)>=t&&!off.has(e.category));
+  if(!up.length)return `<div class="meta">No upcoming events.</div>`;
+  let last="",h="";for(const e of up){const k=e.date<t?t:e.date;if(k!=last){last=k;h+=`<div class="dh">${new Date(k+"T00:00").toLocaleDateString("en",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>`}h+=evHtml(e)}return h}
+document.addEventListener("click",async ev=>{const t=ev.target.closest("[data-c],[data-n],[data-day],[data-e],[data-d]");if(!t)return;const D=t.dataset;
+  if(D.c){off.has(D.c)?off.delete(D.c):off.add(D.c);render()}
+  else if(D.n){cur.setMonth(cur.getMonth()+ +D.n);render()}
+  else if(D.day){sel=D.day;render()}
+  else if(D.e)openForm(events.find(e=>e.id==D.e));
+  else if(D.d&&confirm("Delete this event?")){try{await api("DELETE","/"+D.d);await load()}catch(e){alert(e.message)}}});
+$("#vm").onclick=()=>{view="month";render()};$("#vl").onclick=()=>{view="list";render()};
+$("#adm").onclick=async()=>{
+  if(admin){admin=false;token="";localStorage.removeItem("cal-token");return render()}
+  const t=prompt("Enter admin token");if(!t)return;token=t;
+  try{admin=(await api("GET","/check")).admin}catch{admin=false}
+  if(admin)localStorage.setItem("cal-token",t);else{token="";alert("Wrong token.")}render()};
+const f=$("#f");f.category.innerHTML=Object.keys(CATS).map(c=>`<option>${c}</option>`).join("");
+function openForm(e){editId=e?.id||null;$("#dt").textContent=e?"Edit event":"Add event";f.reset();
+  if(e)for(const k of["title","category","date","endDate","time","endTime","note"])f[k].value=e[k]||"";else f.date.value=sel;$("#dlg").showModal()}
+$("#add").onclick=()=>openForm();$("#cx").onclick=()=>$("#dlg").close();
+f.onsubmit=async e=>{e.preventDefault();const b=Object.fromEntries(new FormData(f));
+  try{await api(editId?"PUT":"POST",editId?"/"+editId:"",b);$("#dlg").close();await load()}catch(er){alert(er.message)}};
+(async()=>{if(token){try{admin=(await api("GET","/check")).admin}catch{}}load()})();
+</script></body></html>
